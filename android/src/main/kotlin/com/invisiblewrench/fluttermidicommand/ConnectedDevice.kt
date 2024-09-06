@@ -3,15 +3,15 @@ package com.invisiblewrench.fluttermidicommand
 import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.media.midi.MidiDevice
 import android.media.midi.MidiDeviceInfo
 import android.media.midi.MidiInputPort
 import android.media.midi.MidiOutputPort
 import android.os.Handler
-import android.util.Log
 import io.flutter.plugin.common.MethodChannel.Result
+import android.media.midi.MidiReceiver
+import java.nio.ByteBuffer
 
 class ConnectedDevice(
     private val midiDevice: MidiDevice,
@@ -28,12 +28,11 @@ class ConnectedDevice(
         val usbDevice = findUsbDevice(deviceInfo)
 
         if (usbDevice != null) {
-            Log.d("FlutterMIDICommand", "Connecting to USB MIDI device")
-            // Assuming you have methods to create and manage USB-MIDI connections
+            // USB MIDI device connection
             usbDeviceConnection = usbManager.openDevice(usbDevice)
-            // Add further USB-MIDI connection handling here
+            // Implement your USB connection handling here
         } else {
-            Log.d("FlutterMIDICommand", "Non-USB MIDI device")
+            // Non-USB MIDI device
             setupNonUsbDevice()
         }
 
@@ -47,13 +46,11 @@ class ConnectedDevice(
     private fun setupNonUsbDevice() {
         val deviceInfo = midiDevice.info
         if (deviceInfo.inputPortCount > 0) {
-            Log.d("FlutterMIDICommand", "Open input port")
             inputPort = midiDevice.openInputPort(0)
         }
         if (deviceInfo.outputPortCount > 0) {
-            Log.d("FlutterMIDICommand", "Open output port")
             outputPort = midiDevice.openOutputPort(0)
-            outputPort?.connect(this.receiver)
+            outputPort?.connect(midiReceiver)
         }
     }
 
@@ -61,6 +58,7 @@ class ConnectedDevice(
         deviceInfo?.let {
             val usbDevices = usbManager.deviceList
             for (device in usbDevices.values) {
+                // Match device based on vendorId or other criteria
                 if (device.vendorId == deviceInfo.properties.getInt("vendorId", -1)) {
                     return device
                 }
@@ -71,16 +69,13 @@ class ConnectedDevice(
 
     fun send(data: ByteArray, timestamp: Long?) {
         if (usbDeviceConnection != null) {
-            // Send data through USB-MIDI connection here
-            // For example:
-            // usbDeviceConnection?.bulkTransfer(endpoint, data, data.size, 1000)
+            // Handle USB-MIDI sending here
         } else {
             outputPort?.send(data, 0, data.size)
         }
     }
 
     fun close() {
-        Log.d("FlutterMIDICommand", "Flush and close ports")
         inputPort?.flush()
         inputPort?.close()
         outputPort?.close()
@@ -88,11 +83,11 @@ class ConnectedDevice(
         setupStreamHandler?.send("deviceDisconnected")
     }
 
-    private val receiver = object : MidiReceiver() {
-        override fun onSend(msg: ByteArray?, offset: Int, count: Int, timestamp: Long) {
-            // Process incoming MIDI messages
+    private val midiReceiver = object : MidiReceiver() {
+        override fun onSend(msg: ByteBuffer?, offset: Int, count: Int, timestamp: Long) {
             msg?.let {
-                val data = it.slice(IntRange(offset, offset + count - 1))
+                val data = ByteArray(count)
+                it.get(data, offset, count)
                 setupStreamHandler?.send(mapOf("data" to data, "timestamp" to timestamp))
             }
         }
