@@ -25,6 +25,10 @@ class ConnectedDevice(
     private var usbDeviceConnection: UsbDeviceConnection? = null
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
 
+    init {
+        // Ensure any initial setup if needed
+    }
+
     override fun connectWithStreamHandler(streamHandler: FMCStreamHandler, connectResult: Result?) {
         Log.d("FlutterMIDICommand", "connectWithHandler")
 
@@ -34,7 +38,7 @@ class ConnectedDevice(
             val receiver = RXReceiver(streamHandler, this.midiDevice)
             this.receiver = receiver
 
-            // Assume all devices are USB for this example
+            // Connect to USB device without checking for MIDI-specific details
             val usbDevices = usbManager.deviceList.values
             for (usbDevice in usbDevices) {
                 usbDeviceConnection = usbManager.openDevice(usbDevice)
