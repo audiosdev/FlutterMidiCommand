@@ -12,20 +12,22 @@ import android.media.midi.MidiReceiver
 import android.os.Handler
 import android.util.Log
 import io.flutter.plugin.common.MethodChannel.Result
-import java.nio.ByteBuffer
 
 class ConnectedDevice(
-    private val midiDevice: MidiDevice,
-    private val setupStreamHandler: FMCStreamHandler,
+    midiDevice: MidiDevice,
+    setupStreamHandler: FMCStreamHandler,
     context: Context
 ) : Device(deviceIdForInfo(midiDevice.info), midiDevice.info.type.toString()) {
 
     var inputPort: MidiInputPort? = null
     var outputPort: MidiOutputPort? = null
-
     private var isOwnVirtualDevice = false
     private var usbDeviceConnection: UsbDeviceConnection? = null
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+
+    // Override the 'midiDevice' and 'setupStreamHandler' properties
+    override val midiDevice: MidiDevice = midiDevice
+    override val setupStreamHandler: FMCStreamHandler = setupStreamHandler
 
     override fun connectWithStreamHandler(streamHandler: FMCStreamHandler, connectResult: Result?) {
         Log.d("FlutterMIDICommand", "connectWithHandler")
