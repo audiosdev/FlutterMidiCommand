@@ -1,56 +1,45 @@
 package com.invisiblewrench.fluttermidicommand
 
-import android.content.Context
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbManager
-import android.media.midi.MidiDevice
-import android.media.midi.MidiDeviceInfo
-import android.media.midi.MidiInputPort
-import android.media.midi.MidiOutputPort
-import android.media.midi.MidiReceiver
+import android.content.pm.ServiceInfo
+import android.media.midi.*
 import android.os.Handler
 import android.util.Log
 import io.flutter.plugin.common.MethodChannel.Result
 
-class ConnectedDevice(
-    private val midiDevice: MidiDevice,
-    private val setupStreamHandler: FMCStreamHandler,
-    context: Context
-) : Device(deviceIdForInfo(midiDevice.info), midiDevice.info.type.toString()) {
+class ConnectedDevice : Device {
+    var inputPort: MidiInputPort? = null
+    var outputPort: MidiOutputPort? = null
 
-    private var inputPort: MidiInputPort? = null
-    private var outputPort: MidiOutputPort? = null
-    private var isOwnVirtualDevice = false
-    private var usbDeviceConnection: UsbDeviceConnection? = null
-    private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+    private var isOwnVirtualDevice = false;
 
-    init {
-        // Ensure any initial setup if needed
+    constructor(device:MidiDevice, setupStreamHandler: FMCStreamHandler) : super(deviceIdForInfo(device.info), device.info.type.toString()) {
+        this.midiDevice = device
+        this.setupStreamHandler = setupStreamHandler
     }
 
-    override fun connectWithStreamHandler(streamHandler: FMCStreamHandler, connectResult: Result?) {
-        Log.d("FlutterMIDICommand", "connectWithHandler")
+    override fun connectWithStreamHandler(streamHandler: FMCStreamHandler, connectResult:Result?) {
+        Log.d("FlutterMIDICommand","connectWithHandler")
 
         this.midiDevice.info?.let {
-            Log.d("FlutterMIDICommand", "inputPorts ${it.inputPortCount} outputPorts ${it.outputPortCount}")
 
-            val receiver = RXReceiver(streamHandler, this.midiDevice)
-            this.receiver = receiver
+            Log.d("FlutterMIDICommand","inputPorts ${it.inputPortCount} outputPorts ${it.outputPortCount}")
 
-            // Connect to USB device without checking for MIDI-specific details
-            val usbDevices = usbManager.deviceList.values
-            for (usbDevice in usbDevices) {
-                usbDeviceConnection = usbManager.openDevice(usbDevice)
-                Log.d("FlutterMIDICommand", "Connected to USB device: ${usbDevice.deviceName}")
-                break
+            this.receiver = RXReceiver(streamHandler, this.midiDevice)
+//
+//        it.ports.forEach {
+//          Log.d("FlutterMIDICommand", "${it.name} ${it.type} ${it.portNumber}")
+//        }
+
+            var serviceInfo = it.properties.getParcelable<ServiceInfo>("service_info")
+            if (serviceInfo?.name == "com.invisiblewrench.fluttermidicommand.VirtualDeviceService") {
+                Log.d("FlutterMIDICommand", "Own virtual")
+                isOwnVirtualDevice = true
+            } else {
+                if (it.inputPortCount > 0) {
+                    Log.d("FlutterMIDICommand", "Open input port")
+                    this.inputPort = this.midiDevice.openInputPort(0)
+                }
             }
-
-            if (inputPort == null && it.inputPortCount > 0) {
-                Log.d("FlutterMIDICommand", "Open input port")
-                this.inputPort = this.midiDevice.openInputPort(0)
-            }
-
             if (it.outputPortCount > 0) {
                 Log.d("FlutterMIDICommand", "Open output port")
                 this.outputPort = this.midiDevice.openOutputPort(0)
@@ -60,19 +49,50 @@ class ConnectedDevice(
 
         Handler().postDelayed({
             connectResult?.success(null)
-            setupStreamHandler.send("deviceConnected")
+            setupStreamHandler?.send("deviceConnected")
         }, 2500)
     }
 
+//    fun openPorts(ports: List<Port>) {
+//      this.midiDevice.info?.let { deviceInfo ->
+//        Log.d("FlutterMIDICommand","inputPorts ${deviceInfo.inputPortCount} outputPorts ${deviceInfo.outputPortCount}")
+//
+//        ports.forEach { port ->
+//          Log.d("FlutterMIDICommand", "Open port ${port.type} ${port.id}")
+//          when (port.type) {
+//            "MidiPortType.IN" -> {
+//              if (deviceInfo.inputPortCount > port.id) {
+//                Log.d("FlutterMIDICommand", "Open input port ${port.id}")
+//                this.inputPort = this.midiDevice.openInputPort(port.id)
+//              }
+//            }
+//            "MidiPortType.OUT" -> {
+//              if (deviceInfo.outputPortCount > port.id) {
+//                Log.d("FlutterMIDICommand", "Open output port ${port.id}")
+//                this.outputPort = this.midiDevice.openOutputPort(port.id)
+//                this.outputPort?.connect(receiver)
+//              }
+//            }
+//            else -> {
+//              Log.d("FlutterMIDICommand", "Unknown MIDI port type ${port.type}. Not opening.")
+//            }
+//          }
+//        }
+//      }
+//    }
+
     override fun send(data: ByteArray, timestamp: Long?) {
-        if (isOwnVirtualDevice) {
-            Log.d("FlutterMIDICommand", "Send to receiver")
+
+        if(isOwnVirtualDevice) {
+            Log.d("FlutterMIDICommand", "Send to recevier")
             if (timestamp == null)
                 this.receiver?.send(data, 0, data.size)
             else
                 this.receiver?.send(data, 0, data.size, timestamp)
+
         } else {
-            this.inputPort?.send(data, 0, data.size, timestamp ?: 0)
+//        Log.d("FlutterMIDICommand", "Send to input port ${this.inputPort}")
+            this.inputPort?.send(data, 0, data.count(), if (timestamp is Long) timestamp else 0)
         }
     }
 
@@ -89,39 +109,40 @@ class ConnectedDevice(
         Log.d("FlutterMIDICommand", "Close device ${this.midiDevice}")
         this.midiDevice.close()
 
-        setupStreamHandler.send("deviceDisconnected")
+        setupStreamHandler?.send("deviceDisconnected")
     }
 
-    class RXReceiver(
-        private val stream: FMCStreamHandler,
-        device: MidiDevice
-    ) : MidiReceiver() {
+    class RXReceiver(stream: FMCStreamHandler, device: MidiDevice) : MidiReceiver() {
+        val stream = stream
+        var isBluetoothDevice = device.info.type == MidiDeviceInfo.TYPE_BLUETOOTH
+        val deviceInfo = mapOf("id" to if(isBluetoothDevice) device.info.properties.get(MidiDeviceInfo.PROPERTY_BLUETOOTH_DEVICE).toString() else device.info.id.toString(), "name" to device.info.properties.getString(MidiDeviceInfo.PROPERTY_NAME), "type" to if(isBluetoothDevice) "BLE" else "native")
 
-        private val isBluetoothDevice = device.info.type == MidiDeviceInfo.TYPE_BLUETOOTH
-        private val deviceInfo = mapOf(
-            "id" to if (isBluetoothDevice) device.info.properties.get(MidiDeviceInfo.PROPERTY_BLUETOOTH_DEVICE).toString() else device.info.id.toString(),
-            "name" to device.info.properties.getString(MidiDeviceInfo.PROPERTY_NAME),
-            "type" to if (isBluetoothDevice) "BLE" else "native"
-        )
-
-        private enum class PARSER_STATE {
-            HEADER, PARAMS, SYSEX
+        // MIDI parsing
+        enum class PARSER_STATE
+        {
+            HEADER,
+            PARAMS,
+            SYSEX,
         }
 
-        private var parserState = PARSER_STATE.HEADER
-        private val sysExBuffer = mutableListOf<Byte>()
-        private val midiBuffer = mutableListOf<Byte>()
-        private var midiPacketLength: Int = 0
-        private var statusByte: Byte = 0
+        var parserState = PARSER_STATE.HEADER
+
+        var sysExBuffer = mutableListOf<Byte>()
+        var midiBuffer = mutableListOf<Byte>()
+        var midiPacketLength:Int = 0
+        var statusByte:Byte = 0
 
         override fun onSend(msg: ByteArray?, offset: Int, count: Int, timestamp: Long) {
-            msg?.let {
-                val data = it.slice(IntRange(offset, offset + count - 1))
+            msg?.also {
+                var data = it.slice(IntRange(offset, offset + count - 1))
+//        Log.d("FlutterMIDICommand", "data sliced $data offset $offset count $count")
 
-                if (data.isNotEmpty()) {
-                    for (i in data.indices) {
-                        val midiByte = data[i]
-                        val midiInt = midiByte.toInt() and 0xFF
+                if (data.size > 0) {
+                    for (i in 0 until data.size) {
+                        var midiByte: Byte = data[i]
+                        var midiInt = midiByte.toInt() and 0xFF
+
+//          Log.d("FlutterMIDICommand", "parserState $parserState byte $midiByte")
 
                         when (parserState) {
                             PARSER_STATE.HEADER -> {
@@ -130,13 +151,16 @@ class ConnectedDevice(
                                     sysExBuffer.clear()
                                     sysExBuffer.add(midiByte)
                                 } else if (midiInt and 0x80 == 0x80) {
+                                    // some kind of midi msg
                                     statusByte = midiByte
                                     midiPacketLength = lengthOfMessageType(midiInt)
+//                Log.d("FlutterMIDICommand", "expected length $midiPacketLength")
                                     midiBuffer.clear()
                                     midiBuffer.add(midiByte)
                                     parserState = PARSER_STATE.PARAMS
                                     finalizeMessageIfComplete(timestamp)
                                 } else {
+                                    // in header state but no status byte, do running status
                                     midiBuffer.clear()
                                     midiBuffer.add(statusByte)
                                     midiBuffer.add(midiByte)
@@ -147,13 +171,30 @@ class ConnectedDevice(
 
                             PARSER_STATE.SYSEX -> {
                                 if (midiInt == 0xF0) {
+                                    // Android can skip SysEx end bytes, when more sysex messages are coming in succession.
+                                    // in an attempt to save the situation, add an end byte to the current buffer and start a new one.
                                     sysExBuffer.add(0xF7.toByte())
-                                    stream.send(mapOf("data" to sysExBuffer.toList(), "timestamp" to timestamp, "device" to deviceInfo))
-                                    sysExBuffer.clear()
+//                Log.d("FlutterMIDICommand", "sysex force finalized $sysExBuffer")
+                                    stream.send(
+                                        mapOf(
+                                            "data" to sysExBuffer.toList(),
+                                            "timestamp" to timestamp,
+                                            "device" to deviceInfo
+                                        )
+                                    )
+                                    sysExBuffer.clear();
                                 }
                                 sysExBuffer.add(midiByte)
                                 if (midiInt == 0xF7) {
-                                    stream.send(mapOf("data" to sysExBuffer.toList(), "timestamp" to timestamp, "device" to deviceInfo))
+                                    // Sysex complete
+//                Log.d("FlutterMIDICommand", "sysex complete $sysExBuffer")
+                                    stream.send(
+                                        mapOf(
+                                            "data" to sysExBuffer.toList(),
+                                            "timestamp" to timestamp,
+                                            "device" to deviceInfo
+                                        )
+                                    )
                                     parserState = PARSER_STATE.HEADER
                                 }
                             }
@@ -168,24 +209,29 @@ class ConnectedDevice(
             }
         }
 
-        private fun finalizeMessageIfComplete(timestamp: Long) {
+        fun finalizeMessageIfComplete(timestamp: Long) {
             if (midiBuffer.size == midiPacketLength) {
-                stream.send(mapOf("data" to midiBuffer.toList(), "timestamp" to timestamp, "device" to deviceInfo))
+//        Log.d("FlutterMIDICommand", "status complete $midiBuffer")
+                stream.send( mapOf("data" to midiBuffer.toList(), "timestamp" to timestamp, "device" to deviceInfo))
                 parserState = PARSER_STATE.HEADER
             }
         }
 
-        private fun lengthOfMessageType(type: Int): Int {
-            val midiType = type and 0xF0
+        fun lengthOfMessageType(type:Int): Int {
+            var midiType:Int = type and 0xF0
 
-            return when (type) {
-                0xF6, 0xF8, 0xFA, 0xFB, 0xFC, 0xFF, 0xFE -> 1
-                0xF1, 0xF3 -> 2
-                0xF2 -> 3
-                0xC0, 0xD0 -> 2
-                0x80, 0x90, 0xA0, 0xB0, 0xE0 -> 3
-                else -> 0
+            when (type) {
+                0xF6, 0xF8, 0xFA, 0xFB, 0xFC, 0xFF, 0xFE -> return 1
+                0xF1, 0xF3 -> return 2
+                0xF2 -> return 3
             }
+
+            when (midiType) {
+                0xC0, 0xD0 -> return 2
+                0x80, 0x90, 0xA0, 0xB0, 0xE0 -> return 3
+            }
+            return 0
         }
     }
+
 }
