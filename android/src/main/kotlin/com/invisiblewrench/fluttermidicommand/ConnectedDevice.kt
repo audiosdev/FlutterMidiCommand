@@ -3,6 +3,7 @@ package com.invisiblewrench.fluttermidicommand
 import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.media.midi.MidiDevice
 import android.media.midi.MidiDeviceInfo
@@ -30,7 +31,7 @@ class ConnectedDevice(
             Log.d("FlutterMIDICommand", "Connecting to USB MIDI device")
             // Assuming you have methods to create and manage USB-MIDI connections
             usbDeviceConnection = usbManager.openDevice(usbDevice)
-            // You need to manage USB-MIDI connections directly here
+            // Add further USB-MIDI connection handling here
         } else {
             Log.d("FlutterMIDICommand", "Non-USB MIDI device")
             setupNonUsbDevice()
