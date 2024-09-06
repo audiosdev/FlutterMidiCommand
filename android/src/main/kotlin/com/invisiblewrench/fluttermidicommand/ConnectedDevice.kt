@@ -14,20 +14,16 @@ import android.util.Log
 import io.flutter.plugin.common.MethodChannel.Result
 
 class ConnectedDevice(
-    midiDevice: MidiDevice,
-    setupStreamHandler: FMCStreamHandler,
+    private val midiDevice: MidiDevice,
+    private val setupStreamHandler: FMCStreamHandler,
     context: Context
 ) : Device(deviceIdForInfo(midiDevice.info), midiDevice.info.type.toString()) {
 
-    var inputPort: MidiInputPort? = null
-    var outputPort: MidiOutputPort? = null
+    private var inputPort: MidiInputPort? = null
+    private var outputPort: MidiOutputPort? = null
     private var isOwnVirtualDevice = false
     private var usbDeviceConnection: UsbDeviceConnection? = null
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-
-    // Override the 'midiDevice' and 'setupStreamHandler' properties
-    override val midiDevice: MidiDevice = midiDevice
-    override val setupStreamHandler: FMCStreamHandler = setupStreamHandler
 
     override fun connectWithStreamHandler(streamHandler: FMCStreamHandler, connectResult: Result?) {
         Log.d("FlutterMIDICommand", "connectWithHandler")
@@ -35,7 +31,8 @@ class ConnectedDevice(
         this.midiDevice.info?.let {
             Log.d("FlutterMIDICommand", "inputPorts ${it.inputPortCount} outputPorts ${it.outputPortCount}")
 
-            this.receiver = RXReceiver(streamHandler, this.midiDevice)
+            val receiver = RXReceiver(streamHandler, this.midiDevice)
+            this.receiver = receiver
 
             // Assume all devices are USB for this example
             val usbDevices = usbManager.deviceList.values
@@ -59,7 +56,7 @@ class ConnectedDevice(
 
         Handler().postDelayed({
             connectResult?.success(null)
-            setupStreamHandler?.send("deviceConnected")
+            setupStreamHandler.send("deviceConnected")
         }, 2500)
     }
 
@@ -88,7 +85,7 @@ class ConnectedDevice(
         Log.d("FlutterMIDICommand", "Close device ${this.midiDevice}")
         this.midiDevice.close()
 
-        setupStreamHandler?.send("deviceDisconnected")
+        setupStreamHandler.send("deviceDisconnected")
     }
 
     class RXReceiver(
