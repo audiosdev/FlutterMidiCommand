@@ -4,6 +4,7 @@ import android.media.midi.*
 import android.os.Handler
 import android.util.Log
 import io.flutter.plugin.common.MethodChannel.Result
+import android.content.pm.ServiceInfo
 
 class ConnectedDevice(device: MidiDevice, setupStreamHandler: FMCStreamHandler) : Device(
     deviceIdForInfo(device.info), device.info.type.toString()
